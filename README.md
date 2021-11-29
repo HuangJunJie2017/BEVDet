@@ -1,2 +1,2 @@
 # BEVDet
-Official code base for BEVDet.
+Code is coming soon!
