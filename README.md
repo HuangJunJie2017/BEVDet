@@ -1,2 +1,2 @@
 # BEVDet
-Code is coming soon!
+Paper is coming soon!
