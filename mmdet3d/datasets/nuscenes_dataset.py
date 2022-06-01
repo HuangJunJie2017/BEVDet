@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import mmcv
+import torch
 import numpy as np
 import pyquaternion
 import tempfile
@@ -123,7 +124,16 @@ class NuScenesDataset(Custom3DDataset):
                  filter_empty_gt=True,
                  test_mode=False,
                  eval_version='detection_cvpr_2019',
-                 use_valid_flag=False):
+                 use_valid_flag=False,
+                 img_info_prototype='mmcv',
+                 speed_mode='relative_dis',
+                 max_interval=3,
+                 min_interval=0,
+                 prev_only=False,
+                 next_only=False,
+                 test_adj = 'prev',
+                 fix_direction=False,
+                 test_adj_ids=None):
         self.load_interval = load_interval
         self.use_valid_flag = use_valid_flag
         super().__init__(
@@ -148,6 +158,17 @@ class NuScenesDataset(Custom3DDataset):
                 use_map=False,
                 use_external=False,
             )
+
+        self.img_info_prototype = img_info_prototype
+
+        self.speed_mode = speed_mode
+        self.max_interval = max_interval
+        self.min_interval = min_interval
+        self.prev_only = prev_only
+        self.next_only = next_only
+        self.test_adj = test_adj
+        self.fix_direction = fix_direction
+        self.test_adj_ids = test_adj_ids
 
     def get_cat_ids(self, idx):
         """Get category distribution of single scene.
@@ -218,33 +239,83 @@ class NuScenesDataset(Custom3DDataset):
         )
 
         if self.modality['use_camera']:
-            image_paths = []
-            lidar2img_rts = []
-            for cam_type, cam_info in info['cams'].items():
-                image_paths.append(cam_info['data_path'])
-                # obtain lidar to image transformation matrix
-                lidar2cam_r = np.linalg.inv(cam_info['sensor2lidar_rotation'])
-                lidar2cam_t = cam_info[
-                    'sensor2lidar_translation'] @ lidar2cam_r.T
-                lidar2cam_rt = np.eye(4)
-                lidar2cam_rt[:3, :3] = lidar2cam_r.T
-                lidar2cam_rt[3, :3] = -lidar2cam_t
-                intrinsic = cam_info['cam_intrinsic']
-                viewpad = np.eye(4)
-                viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
-                lidar2img_rt = (viewpad @ lidar2cam_rt.T)
-                lidar2img_rts.append(lidar2img_rt)
+            if self.img_info_prototype == 'mmcv':
+                image_paths = []
+                lidar2img_rts = []
+                for cam_type, cam_info in info['cams'].items():
+                    image_paths.append(cam_info['data_path'])
+                    # obtain lidar to image transformation matrix
+                    lidar2cam_r = np.linalg.inv(cam_info['sensor2lidar_rotation'])
+                    lidar2cam_t = cam_info[
+                        'sensor2lidar_translation'] @ lidar2cam_r.T
+                    lidar2cam_rt = np.eye(4)
+                    lidar2cam_rt[:3, :3] = lidar2cam_r.T
+                    lidar2cam_rt[3, :3] = -lidar2cam_t
+                    intrinsic = cam_info['cam_intrinsic']
+                    viewpad = np.eye(4)
+                    viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
+                    lidar2img_rt = (viewpad @ lidar2cam_rt.T)
+                    lidar2img_rts.append(lidar2img_rt)
 
-            input_dict.update(
-                dict(
-                    img_filename=image_paths,
-                    lidar2img=lidar2img_rts,
-                ))
+                input_dict.update(
+                    dict(
+                        img_filename=image_paths,
+                        lidar2img=lidar2img_rts,
+                    ))
+            elif self.img_info_prototype == 'bevdet':
+                input_dict.update(dict(img_info=info['cams']))
+            elif self.img_info_prototype == 'bevdet_sequential':
+                if info ['prev'] is None or info['next'] is None:
+                    adjacent= 'prev' if info['next'] is None else 'next'
+                else:
+                    if self.prev_only or self.next_only:
+                        adjacent = 'prev' if self.prev_only else 'next'
+                    elif self.test_mode:
+                        adjacent = self.test_adj
+                    else:
+                        adjacent = np.random.choice(['prev', 'next'])
+                if type(info[adjacent]) is list:
+                    if self.test_mode:
+                        if self.test_adj_ids is not None:
+                            info_adj=[]
+                            select_id = self.test_adj_ids
+                            for id_tmp in select_id:
+                                id_tmp = min(id_tmp, len(info[adjacent])-1)
+                                info_adj.append(info[adjacent][id_tmp])
+                        else:
+                            select_id = min((self.max_interval+self.min_interval)//2,
+                                            len(info[adjacent])-1)
+                            info_adj = info[adjacent][select_id]
+                    else:
+                        if len(info[adjacent])<= self.min_interval:
+                            select_id = len(info[adjacent])-1
+                        else:
+                            select_id = np.random.choice([adj_id for adj_id in range(
+                                min(self.min_interval,len(info[adjacent])),
+                                min(self.max_interval,len(info[adjacent])))])
+                        info_adj = info[adjacent][select_id]
+                else:
+                    info_adj = info[adjacent]
+                input_dict.update(dict(img_info=info['cams'],
+                                       curr=info,
+                                       adjacent=info_adj,
+                                       adjacent_type=adjacent))
 
         if not self.test_mode:
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
-
+            if self.img_info_prototype == 'bevdet_sequential':
+                bbox = input_dict['ann_info']['gt_bboxes_3d'].tensor
+                if 'abs' in self.speed_mode:
+                    bbox[:, 7:9] = bbox[:, 7:9] + torch.from_numpy(info['velo']).view(1,2)
+                if input_dict['adjacent_type'] == 'next' and not self.fix_direction:
+                    bbox[:, 7:9] = -bbox[:, 7:9]
+                if 'dis' in self.speed_mode:
+                    time = abs(input_dict['timestamp'] - 1e-6 * input_dict['adjacent']['timestamp'])
+                    bbox[:, 7:9] = bbox[:, 7:9] * time
+                input_dict['ann_info']['gt_bboxes_3d'] = LiDARInstance3DBoxes(bbox,
+                                                                              box_dim=bbox.shape[-1],
+                                                                              origin=(0.5, 0.5, 0.0))
         return input_dict
 
     def get_ann_info(self, index):
@@ -314,7 +385,11 @@ class NuScenesDataset(Custom3DDataset):
         print('Start to convert detection format...')
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
             annos = []
-            boxes = output_to_nusc_box(det)
+            boxes = output_to_nusc_box(det, self.data_infos[sample_id],
+                                       self.speed_mode, self.img_info_prototype,
+                                       self.max_interval, self.test_adj,
+                                       self.fix_direction,
+                                       self.test_adj_ids)
             sample_token = self.data_infos[sample_id]['token']
             boxes = lidar_nusc_box_to_global(self.data_infos[sample_id], boxes,
                                              mapped_class_names,
@@ -568,7 +643,9 @@ class NuScenesDataset(Custom3DDataset):
                         file_name, show)
 
 
-def output_to_nusc_box(detection):
+def output_to_nusc_box(detection, info, speed_mode,
+                       img_info_prototype, max_interval, test_adj, fix_direction,
+                       test_adj_ids):
     """Convert the output to the box class in the nuScenes.
 
     Args:
@@ -592,10 +669,28 @@ def output_to_nusc_box(detection):
     # with dir_offset & dir_limit in the head
     box_yaw = -box_yaw - np.pi / 2
 
+    velocity_all = box3d.tensor[:, 7:9]
+    if img_info_prototype =='bevdet_sequential':
+        if info['prev'] is None or info['next'] is None:
+            adjacent = 'prev' if info['next'] is None else 'next'
+        else:
+            adjacent = test_adj
+        if adjacent == 'next' and not fix_direction:
+            velocity_all = -velocity_all
+        if type(info[adjacent]) is list:
+            select_id = min(max_interval // 2, len(info[adjacent]) - 1)
+            # select_id = min(2, len(info[adjacent]) - 1)
+            info_adj = info[adjacent][select_id]
+        else:
+            info_adj = info[adjacent]
+        if 'dis' in speed_mode and test_adj_ids is None:
+            time = abs(1e-6 * info['timestamp'] - 1e-6 * info_adj['timestamp'])
+            velocity_all = velocity_all / time
+
     box_list = []
     for i in range(len(box3d)):
         quat = pyquaternion.Quaternion(axis=[0, 0, 1], radians=box_yaw[i])
-        velocity = (*box3d.tensor[i, 7:9], 0.0)
+        velocity = (*velocity_all[i,:], 0.0)
         # velo_val = np.linalg.norm(box3d[i, 7:9])
         # velo_ori = box3d[i, 6]
         # velocity = (

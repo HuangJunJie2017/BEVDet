@@ -657,11 +657,14 @@ class CenterHead(BaseModule):
                 batch_vel,
                 reg=batch_reg,
                 task_id=task_id)
-            assert self.test_cfg['nms_type'] in ['circle', 'rotate']
+            # assert self.test_cfg['nms_type'] in ['circle', 'rotate']
             batch_reg_preds = [box['bboxes'] for box in temp]
             batch_cls_preds = [box['scores'] for box in temp]
             batch_cls_labels = [box['labels'] for box in temp]
-            if self.test_cfg['nms_type'] == 'circle':
+            nms_type = self.test_cfg.get('nms_type')
+            if isinstance(nms_type,list):
+                nms_type = nms_type[task_id]
+            if nms_type == 'circle':
                 ret_task = []
                 for i in range(batch_size):
                     boxes3d = temp[i]['bboxes']
@@ -687,7 +690,7 @@ class CenterHead(BaseModule):
                 rets.append(
                     self.get_task_detections(num_class_with_bg,
                                              batch_cls_preds, batch_reg_preds,
-                                             batch_cls_labels, img_metas))
+                                             batch_cls_labels, img_metas, task_id))
 
         # Merge branches results
         num_samples = len(rets[0])
@@ -712,7 +715,7 @@ class CenterHead(BaseModule):
         return ret_list
 
     def get_task_detections(self, num_class_with_bg, batch_cls_preds,
-                            batch_reg_preds, batch_cls_labels, img_metas):
+                            batch_reg_preds, batch_cls_labels, img_metas, task_id):
         """Rotate nms for each task.
 
         Args:
@@ -746,6 +749,13 @@ class CenterHead(BaseModule):
         for i, (box_preds, cls_preds, cls_labels) in enumerate(
                 zip(batch_reg_preds, batch_cls_preds, batch_cls_labels)):
 
+            nms_rescale_factor = self.test_cfg.get('nms_rescale_factor', [1.0 for _ in range(len(self.task_heads))])[task_id]
+            if isinstance(nms_rescale_factor,list):
+                for cid in range(len(nms_rescale_factor)):
+                    box_preds[cls_labels==cid, 3:6] = box_preds[cls_labels==cid, 3:6] * nms_rescale_factor[cid]
+            else:
+                box_preds[:,3:6] = box_preds[:,3:6] * nms_rescale_factor
+
             # Apply NMS in birdeye view
 
             # get highest score per prediction, than apply nms
@@ -776,15 +786,24 @@ class CenterHead(BaseModule):
                 boxes_for_nms = xywhr2xyxyr(img_metas[i]['box_type_3d'](
                     box_preds[:, :], self.bbox_coder.code_size).bev)
                 # the nms in 3d detection just remove overlap boxes.
-
+                if isinstance(self.test_cfg['nms_thr'],list):
+                    nms_thresh = self.test_cfg['nms_thr'][task_id]
+                else:
+                    nms_thresh = self.test_cfg['nms_thr']
                 selected = nms_gpu(
                     boxes_for_nms,
                     top_scores,
-                    thresh=self.test_cfg['nms_thr'],
+                    thresh=nms_thresh,
                     pre_maxsize=self.test_cfg['pre_max_size'],
                     post_max_size=self.test_cfg['post_max_size'])
             else:
                 selected = []
+
+            if isinstance(nms_rescale_factor, list):
+                for cid in range(len(nms_rescale_factor)):
+                    box_preds[cls_labels == cid, 3:6] = box_preds[cls_labels == cid, 3:6] / nms_rescale_factor[cid]
+            else:
+                box_preds[:, 3:6] = box_preds[:, 3:6] / nms_rescale_factor
 
             # if selected is not None:
             selected_boxes = box_preds[selected]

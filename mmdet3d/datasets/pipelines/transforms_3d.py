@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import torch
 import numpy as np
 import warnings
 from mmcv import is_tuple_of
@@ -86,6 +87,7 @@ class RandomFlip3D(RandomFlip):
                  sync_2d=True,
                  flip_ratio_bev_horizontal=0.0,
                  flip_ratio_bev_vertical=0.0,
+                 update_img2lidar=False,
                  **kwargs):
         super(RandomFlip3D, self).__init__(
             flip_ratio=flip_ratio_bev_horizontal, **kwargs)
@@ -99,6 +101,7 @@ class RandomFlip3D(RandomFlip):
             assert isinstance(
                 flip_ratio_bev_vertical,
                 (int, float)) and 0 <= flip_ratio_bev_vertical <= 1
+        self.update_img2lidar = update_img2lidar
 
     def random_flip_data_3d(self, input_dict, direction='horizontal'):
         """Flip 3D data randomly.
@@ -135,6 +138,23 @@ class RandomFlip3D(RandomFlip):
             # see more details and examples at
             # https://github.com/open-mmlab/mmdetection3d/pull/744
             input_dict['cam2img'][0][2] = w - input_dict['cam2img'][0][2]
+
+    def update_transform(self, input_dict):
+        transform = torch.zeros((input_dict['img_inputs'][1].shape[0],4,4)).float()
+        transform[:,:3,:3] = input_dict['img_inputs'][1]
+        transform[:,:3,-1] = input_dict['img_inputs'][2]
+        transform[:, -1, -1] = 1.0
+
+        aug_transform = torch.eye(4).float()
+        if input_dict['pcd_horizontal_flip']:
+            aug_transform[1,1] = -1
+        if input_dict['pcd_vertical_flip']:
+            aug_transform[0,0] = -1
+        aug_transform = aug_transform.view(1,4,4)
+        new_transform = aug_transform.matmul(transform)
+        input_dict['img_inputs'][1][...] = new_transform[:,:3,:3]
+        input_dict['img_inputs'][2][...] = new_transform[:,:3,-1]
+
 
     def __call__(self, input_dict):
         """Call function to flip points, values in the ``bbox3d_fields`` and \
@@ -173,6 +193,10 @@ class RandomFlip3D(RandomFlip):
         if input_dict['pcd_vertical_flip']:
             self.random_flip_data_3d(input_dict, 'vertical')
             input_dict['transformation_3d_flow'].extend(['VF'])
+
+        if 'img_inputs' in input_dict:
+            assert self.update_img2lidar
+            self.update_transform(input_dict)
         return input_dict
 
     def __repr__(self):
@@ -529,7 +553,8 @@ class GlobalRotScaleTrans(object):
                  rot_range=[-0.78539816, 0.78539816],
                  scale_ratio_range=[0.95, 1.05],
                  translation_std=[0, 0, 0],
-                 shift_height=False):
+                 shift_height=False,
+                 update_img2lidar=False):
         seq_types = (list, tuple, np.ndarray)
         if not isinstance(rot_range, seq_types):
             assert isinstance(rot_range, (int, float)), \
@@ -551,6 +576,7 @@ class GlobalRotScaleTrans(object):
             'translation_std should be positive'
         self.translation_std = translation_std
         self.shift_height = shift_height
+        self.update_img2lidar = update_img2lidar
 
     def _trans_bbox_points(self, input_dict):
         """Private function to translate bounding boxes and points.
@@ -635,6 +661,25 @@ class GlobalRotScaleTrans(object):
                                          self.scale_ratio_range[1])
         input_dict['pcd_scale_factor'] = scale_factor
 
+    def update_transform(self, input_dict):
+        transform = torch.zeros((input_dict['img_inputs'][1].shape[0],4,4)).float()
+        transform[:,:3,:3] = input_dict['img_inputs'][1]
+        transform[:,:3,-1] = input_dict['img_inputs'][2]
+        transform[:, -1, -1] = 1.0
+
+        aug_transform = torch.zeros((input_dict['img_inputs'][1].shape[0],4,4)).float()
+        if 'pcd_rotation' in input_dict:
+            aug_transform[:,:3,:3] = input_dict['pcd_rotation'].T * input_dict['pcd_scale_factor']
+        else:
+            aug_transform[:, :3, :3] = torch.eye(3).view(1,3,3) * input_dict['pcd_scale_factor']
+        aug_transform[:,:3,-1] = torch.from_numpy(input_dict['pcd_trans']).reshape(1,3)
+        aug_transform[:, -1, -1] = 1.0
+
+        new_transform = aug_transform.matmul(transform)
+        input_dict['img_inputs'][1][...] = new_transform[:,:3,:3]
+        input_dict['img_inputs'][2][...] = new_transform[:,:3,-1]
+
+
     def __call__(self, input_dict):
         """Private function to rotate, scale and translate bounding boxes and \
         points.
@@ -659,6 +704,9 @@ class GlobalRotScaleTrans(object):
         self._trans_bbox_points(input_dict)
 
         input_dict['transformation_3d_flow'].extend(['R', 'S', 'T'])
+        if 'img_inputs' in input_dict:
+            assert self.update_img2lidar
+            self.update_transform(input_dict)
         return input_dict
 
     def __repr__(self):
