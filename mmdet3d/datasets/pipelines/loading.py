@@ -189,9 +189,6 @@ class LoadMultiViewImageFromFiles_BEVDet(object):
             rot = torch.Tensor(cam_data['sensor2lidar_rotation'])
             tran = torch.Tensor(cam_data['sensor2lidar_translation'])
 
-            if self.camera_model_consistent is not None:
-                img, intrin = self.modify_camera_model(img, intrin)
-
             # augmentation (resize, crop, horizontal flip, rotate)
             resize, resize_dims, crop, flip, rotate = self.sample_augmentation(H=img.height,
                                                                                W=img.width,
