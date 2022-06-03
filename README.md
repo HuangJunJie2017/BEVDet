@@ -25,6 +25,18 @@ cd BEVDet/
 python tools/data_converter/prepare_nuscenes_for_bevdet4d.py
 ```
 
+
+## Acknowledgement
+This project is not possible without multiple great open-sourced code bases. We list some notable examples below.
+* [open-mmlab](https://github.com/open-mmlab) 
+* [CenterPoint](https://github.com/tianweiy/CenterPoint)
+* [Lift-Splat-Shoot](https://github.com/nv-tlabs/lift-splat-shoot)
+* [Swin Transformer](https://github.com/microsoft/Swin-Transformer)
+
+Beside, there are some other attractive works extend the boundary of BEVDet. 
+* [BEVerse](https://github.com/zhangyp15/BEVerse)  for multi-task learning.
+* [BEVFusion](https://github.com/mit-han-lab/bevfusion)  for acceleration, multi-task learning, and multi-sensor fusion. (Note: The acceleration method is a concurrent work of that of BEVDet and has some superior characteristics like memory saving and completely equivalent.)
+
 ## Bibtex
 If this work is helpful for your research, please consider citing the following BibTeX entry.
 ```
