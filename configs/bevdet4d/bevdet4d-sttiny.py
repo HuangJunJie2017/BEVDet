@@ -47,7 +47,7 @@ model = dict(
     before=True,
     img_backbone=dict(
         type='SwinTransformer',
-        pretrained="/mnt/cfs/algorithm/junjie.huang/models/swin_tiny_patch4_window7_224.pth",
+        pretrained='https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_tiny_patch4_window7_224.pth',
         pretrain_img_size=224,
         embed_dims=96,
         patch_size=4,
@@ -194,6 +194,13 @@ train_pipeline = [
 test_pipeline = [
     dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config,
          sequential=True, aligned=True, trans_only=False),
+    # load lidar points for --show in test.py only
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
     dict(
         type='MultiScaleFlipAug3D',
         img_scale=(1333, 800),
@@ -204,7 +211,7 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['img_inputs'],
+            dict(type='Collect3D', keys=['points', 'img_inputs'],
                  meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
                             'depth2img', 'cam2img', 'pad_shape',
                             'scale_factor', 'flip', 'pcd_horizontal_flip',
