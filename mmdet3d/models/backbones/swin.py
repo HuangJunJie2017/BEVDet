@@ -428,8 +428,10 @@ class SwinBlock(BaseModule):
             act_cfg=act_cfg,
             add_identity=True,
             init_cfg=None)
+        self.hw_shape = None
 
-    def forward(self, x, hw_shape):
+    def forward(self, x):
+        hw_shape = self.hw_shape
         identity = x
         x = self.norm1(x)
         x = self.attn(x, hw_shape)
@@ -515,10 +517,11 @@ class SwinBlockSequence(BaseModule):
 
     def forward(self, x, hw_shape):
         for block in self.blocks:
+            block.hw_shape=hw_shape
             if self.with_cp:
-                x = checkpoint.checkpoint(block, x, hw_shape)
+                x = checkpoint.checkpoint(block, x)
             else:
-                x = block(x, hw_shape)
+                x = block(x)
 
         if self.downsample:
             x_down, down_hw_shape = self.downsample(x, hw_shape)
