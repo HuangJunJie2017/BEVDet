@@ -288,7 +288,9 @@ class CenterHead(BaseModule):
                  norm_cfg=dict(type='BN2d'),
                  bias='auto',
                  norm_bbox=True,
-                 init_cfg=None):
+                 init_cfg=None,
+                 task_specific=True,
+                 loss_prefix=''):
         assert init_cfg is None, 'To prevent abnormal initialization ' \
             'behavior, init_cfg is not allowed to be set'
         super(CenterHead, self).__init__(init_cfg=init_cfg)
@@ -325,6 +327,10 @@ class CenterHead(BaseModule):
             separate_head.update(
                 in_channels=share_conv_channel, heads=heads, num_cls=num_cls)
             self.task_heads.append(builder.build_head(separate_head))
+
+
+        self.task_specific = task_specific
+        self.loss_prefix = loss_prefix
 
     def forward_single(self, x):
         """Forward function for CenterPoint.
@@ -611,10 +617,21 @@ class CenterHead(BaseModule):
 
             code_weights = self.train_cfg.get('code_weights', None)
             bbox_weights = mask * mask.new_tensor(code_weights)
-            loss_bbox = self.loss_bbox(
-                pred, target_box, bbox_weights, avg_factor=(num + 1e-4))
-            loss_dict[f'task{task_id}.loss_heatmap'] = loss_heatmap
-            loss_dict[f'task{task_id}.loss_bbox'] = loss_bbox
+            if self.task_specific:
+                name_list=['xy','z','whl','yaw','vel']
+                clip_index = [0,2,3,6,8,10]
+                for reg_task_id in range(len(name_list)):
+                    pred_tmp = pred[...,clip_index[reg_task_id]:clip_index[reg_task_id+1]]
+                    target_box_tmp = target_box[...,clip_index[reg_task_id]:clip_index[reg_task_id+1]]
+                    bbox_weights_tmp = bbox_weights[...,clip_index[reg_task_id]:clip_index[reg_task_id+1]]
+                    loss_bbox_tmp = self.loss_bbox(
+                        pred_tmp, target_box_tmp, bbox_weights_tmp, avg_factor=(num + 1e-4))
+                    loss_dict[f'%stask{task_id}.loss_%s'%(self.loss_prefix,name_list[reg_task_id])] = loss_bbox_tmp
+            else:
+                loss_bbox = self.loss_bbox(
+                    pred, target_box, bbox_weights, avg_factor=(num + 1e-4))
+                loss_dict[f'task{task_id}.loss_bbox'] = loss_bbox
+            loss_dict[f'%stask{task_id}.loss_heatmap'%(self.loss_prefix)] = loss_heatmap
         return loss_dict
 
     def get_bboxes(self, preds_dicts, img_metas, img=None, rescale=False):
