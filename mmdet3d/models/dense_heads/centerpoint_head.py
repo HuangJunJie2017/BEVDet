@@ -818,7 +818,7 @@ class CenterHead(BaseModule):
 
             if isinstance(nms_rescale_factor, list):
                 for cid in range(len(nms_rescale_factor)):
-                    box_preds[cls_labels == cid, 3:6] = box_preds[cls_labels == cid, 3:6] / nms_rescale_factor[cid]
+                    box_preds[top_labels == cid, 3:6] = box_preds[top_labels == cid, 3:6] / nms_rescale_factor[cid]
             else:
                 box_preds[:, 3:6] = box_preds[:, 3:6] / nms_rescale_factor
 
