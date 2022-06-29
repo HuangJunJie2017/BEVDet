@@ -9,26 +9,37 @@
 * **2022.04.01** We upgrade the BEVDet paradigm with some modifications to improve its performance and inference speed. **Thchnical report of BEVDet has been updated.** \[[BEVDetv1](https://arxiv.org/abs/2112.11790)\].
 * **2021.12.23** BEVDet is now on arxiv. \[[BEVDet](https://arxiv.org/abs/2112.11790)\].
 
+## Update
+* **2022.06.29** Spport acceleration of the Lift-Splat-Shoot view transformer! Please refer to \[[Technical Report](https://arxiv.org/abs/2112.11790)\] for detailed introduction and [Get Started](https://github.com/HuangJunJie2017/BEVDet#get-started) for testing BEVDet with acceleration.
+
 ## Main Results
-| Method            | mAP      | NDS     | FPS    |   Download |
-|--------|----------|---------|--------|-------------|
-| [**BEVDet-Tiny**](configs/bevdet/bevdet-sttiny.py)   | 30.8     | 40.4    | 15.6   | [google](https://drive.google.com/file/d/10innSxqN7NgbktrlfPjWjE7gz-xpbJO_/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1DBxJXgtrW1_7McPSM_koyA?pwd=tbac) / [log](https://pan.baidu.com/s/1DnnBmoP3_sHayxTpOLUy5A?pwd=9uxh)        |
-| [**BEVDet4D-Tiny**](configs/bevdet4d/bevdet4d-sttiny.py) | 33.8     | 47.6    | 15.5   | [google](https://drive.google.com/file/d/1nyQfp7Gt-xbXDzcw5ritmFb8lvPM1H6n/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1n9sVR6FnfmMccSJFTsVKfw?pwd=nzi1) / [log](https://pan.baidu.com/s/1VlvLSRPSBRw1EoYvSC3WAA?pwd=e4h1)        |
+| Method            | mAP      | NDS     | FPS    |Mem (MB) |   Download |
+|--------|----------|---------|--------|-------------|-----|
+| [**BEVDet-Tiny**](configs/bevdet/bevdet-sttiny.py)       | 30.8     | 40.4    | 15.6   |11,965| [google](https://drive.google.com/file/d/10innSxqN7NgbktrlfPjWjE7gz-xpbJO_/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1DBxJXgtrW1_7McPSM_koyA?pwd=tbac) / [log](https://pan.baidu.com/s/1DnnBmoP3_sHayxTpOLUy5A?pwd=9uxh)        |
+| [**BEVDet4D-Tiny**](configs/bevdet4d/bevdet4d-sttiny.py) | 33.8     | 47.6    | 15.5   |11,557| [google](https://drive.google.com/file/d/1nyQfp7Gt-xbXDzcw5ritmFb8lvPM1H6n/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1n9sVR6FnfmMccSJFTsVKfw?pwd=nzi1) / [log](https://pan.baidu.com/s/1VlvLSRPSBRw1EoYvSC3WAA?pwd=e4h1)        |
 ## Get Started
-##### Please follow the guidelines in the original mmdet3d for preparing the repo and dataset.
+#### Installation
+##### 1.Please follow the guidelines in the original mmdet3d for preparing the repo and dataset.
 
 Please see [getting_started.md](docs/getting_started.md) for the basic usage of MMDetection3D. We provide guidance for quick run [with existing dataset](docs/1_exist_data_model.md) and [with customized dataset](docs/2_new_data_model.md) for beginners. There are also tutorials for [learning configuration systems](docs/tutorials/config.md), [adding new dataset](docs/tutorials/customize_dataset.md), [designing data pipeline](docs/tutorials/data_pipeline.md), [customizing models](docs/tutorials/customize_models.md), [customizing runtime settings](docs/tutorials/customize_runtime.md) and [Waymo dataset](docs/datasets/waymo_det.md).
 
-##### Prepare dataset specific for BEVDet4D.
+##### 2.Prepare dataset specific for BEVDet4D.
 Note: Make sure that data preparation in [nuscenes_det.md](docs/datasets/nuscenes_det.md) has been conducted.
 ```shell
-cd BEVDet/
 python tools/data_converter/prepare_nuscenes_for_bevdet4d.py
 ```
-##### Visualize the predicted result with open3d.
+
+#### Estimate the inference speed of BEVDet
+```shell
+# with acceleration
+python tools/analysis_tools/benchmark.py configs/bevdet/bevdet-sttiny-accelerated.py $checkpoint
+# without acceleration
+python tools/analysis_tools/benchmark.py configs/bevdet/bevdet-sttiny.py $checkpoint
+```
+
+#### Visualize the predicted result with open3d.
 Note: make sure that you conduct the visualization locally instead of on the remote server.
 ```shell
-cd BEVDet/
 python tools/test.py $config $checkpoint --show --show-dir $save-path
 ```
 ## Acknowledgement

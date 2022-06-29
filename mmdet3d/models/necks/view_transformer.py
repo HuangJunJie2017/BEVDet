@@ -55,7 +55,7 @@ class QuickCumsum(torch.autograd.Function):
 class ViewTransformerLiftSplatShoot(BaseModule):
     def __init__(self, grid_config=None, data_config=None,
                  numC_input=512, numC_Trans=64, downsample=16,
-                 image_view_supervision=False, voxel=False, **kwargs):
+                 accelerate=False, **kwargs):
         super(ViewTransformerLiftSplatShoot, self).__init__()
         if grid_config is None:
             grid_config = {
@@ -83,8 +83,7 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         self.numC_Trans = numC_Trans
         self.depthnet = nn.Conv2d(self.numC_input, self.D + self.numC_Trans, kernel_size=1, padding=0)
         self.geom_feats = None
-        self.image_view_supervision = image_view_supervision
-        self.voxel=voxel
+        self.accelerate = accelerate
 
     def get_depth_dist(self, x):
         return x.softmax(dim=1)
@@ -167,8 +166,71 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         # griddify (B x C x Z x X x Y)
         final = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
         final[geom_feats[:, 3], :, geom_feats[:, 2], geom_feats[:, 1], geom_feats[:, 0]] = x
-        if self.voxel:
-            return final.sum(2), x, geom_feats
+        # collapse Z
+        final = torch.cat(final.unbind(dim=2), 1)
+
+        return final
+
+    def voxel_pooling_accelerated(self, rots, trans, intrins, post_rots, post_trans, x):
+        B, N, D, H, W, C = x.shape
+        Nprime = B * N * D * H * W
+        nx = self.nx.to(torch.long)
+        # flatten x
+        x = x.reshape(Nprime, C)
+        max = 300
+        # flatten indices
+        if self.geom_feats is None:
+            geom_feats = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
+            geom_feats = ((geom_feats - (self.bx - self.dx / 2.)) / self.dx).long()
+            geom_feats = geom_feats.view(Nprime, 3)
+            batch_ix = torch.cat([torch.full([Nprime // B, 1], ix,
+                                             device=x.device, dtype=torch.long) for ix in range(B)])
+            geom_feats = torch.cat((geom_feats, batch_ix), 1)
+
+            # filter out points that are outside box
+            kept1 = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < self.nx[0]) \
+                    & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < self.nx[1]) \
+                    & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < self.nx[2])
+            idx = torch.range(0, x.shape[0] - 1, dtype=torch.long)
+            x = x[kept1]
+            idx = idx[kept1]
+            geom_feats = geom_feats[kept1]
+
+            # get tensors from the same voxel next to each other
+            ranks = geom_feats[:, 0] * (self.nx[1] * self.nx[2] * B) \
+                    + geom_feats[:, 1] * (self.nx[2] * B) \
+                    + geom_feats[:, 2] * B \
+                    + geom_feats[:, 3]
+            sorts = ranks.argsort()
+            x, geom_feats, ranks, idx = x[sorts], geom_feats[sorts], ranks[sorts], idx[sorts]
+            repeat_id = torch.ones(geom_feats.shape[0], device=geom_feats.device, dtype=geom_feats.dtype)
+            curr = 0
+            repeat_id[0] = 0
+            curr_rank = ranks[0]
+
+            for i in range(1, ranks.shape[0]):
+                if curr_rank == ranks[i]:
+                    curr += 1
+                    repeat_id[i] = curr
+                else:
+                    curr_rank = ranks[i]
+                    curr = 0
+                    repeat_id[i] = curr
+            kept2 = repeat_id < max
+            repeat_id, geom_feats, x, idx = repeat_id[kept2], geom_feats[kept2], x[kept2], idx[kept2]
+
+            geom_feats = torch.cat([geom_feats, repeat_id.unsqueeze(-1)], dim=-1)
+            self.geom_feats = geom_feats
+            self.idx = idx
+        else:
+            geom_feats = self.geom_feats
+            idx = self.idx
+            x = x[idx]
+
+        # griddify (B x C x Z x X x Y)
+        final = torch.zeros((B, C, nx[2], nx[1], nx[0], max), device=x.device)
+        final[geom_feats[:, 3], :, geom_feats[:, 2], geom_feats[:, 1], geom_feats[:, 0], geom_feats[:, 4]] = x
+        final = final.sum(-1)
         # collapse Z
         final = torch.cat(final.unbind(dim=2), 1)
 
@@ -180,7 +242,6 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         x = x.view(B * N, C, H, W)
         x = self.depthnet(x)
         depth = self.get_depth_dist(x[:, :self.D])
-        geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
         img_feat = x[:, self.D:(self.D + self.numC_Trans)]
 
         # Lift
@@ -189,7 +250,9 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         volume = volume.permute(0, 1, 3, 4, 5, 2)
 
         # Splat
-        bev_feat = self.voxel_pooling(geom, volume)
-        if self.image_view_supervision:
-            return bev_feat, [x[:, :self.D].view(B,N,self.D,H,W), x[:, self.D:].view(B,N,self.numC_Trans,H,W)]
+        if self.accelerate:
+            bev_feat = self.voxel_pooling_accelerated(rots, trans, intrins, post_rots, post_trans, volume)
+        else:
+            geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
+            bev_feat = self.voxel_pooling(geom, volume)
         return bev_feat
