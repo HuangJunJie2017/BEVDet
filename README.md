@@ -10,24 +10,18 @@
 * **2021.12.23** BEVDet is now on arxiv. \[[BEVDet](https://arxiv.org/abs/2112.11790)\].
 
 ## Update
+* **2022.07.08** Spport visualization remotely! Please refer to [Get Started](https://github.com/HuangJunJie2017/BEVDet#get-started) for usage.
 * **2022.06.29** Spport acceleration of the Lift-Splat-Shoot view transformer! Please refer to \[[Technical Report](https://arxiv.org/abs/2112.11790)\] for detailed introduction and [Get Started](https://github.com/HuangJunJie2017/BEVDet#get-started) for testing BEVDet with acceleration.
 
 ## Main Results
-| Method            | mAP      | NDS     | FPS    |Mem (MB) |   Download |
-|--------|----------|---------|--------|-------------|-----|
-| [**BEVDet-Tiny**](configs/bevdet/bevdet-sttiny.py)       | 30.8     | 40.4    | 15.6   |11,965| [google](https://drive.google.com/file/d/10innSxqN7NgbktrlfPjWjE7gz-xpbJO_/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1DBxJXgtrW1_7McPSM_koyA?pwd=tbac) / [log](https://pan.baidu.com/s/1DnnBmoP3_sHayxTpOLUy5A?pwd=9uxh)        |
-| [**BEVDet4D-Tiny**](configs/bevdet4d/bevdet4d-sttiny.py) | 33.8     | 47.6    | 15.5   |11,557| [google](https://drive.google.com/file/d/1nyQfp7Gt-xbXDzcw5ritmFb8lvPM1H6n/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1n9sVR6FnfmMccSJFTsVKfw?pwd=nzi1) / [log](https://pan.baidu.com/s/1VlvLSRPSBRw1EoYvSC3WAA?pwd=e4h1)        |
+| Method            | mAP      | NDS     | FPS    |Mem (MB) |   Model | Log
+|--------|----------|---------|--------|-------------|-----|-------|
+| [**BEVDet-Tiny**](configs/bevdet/bevdet-sttiny.py)       | 30.8     | 40.4    | 15.6   |11,965| [google](https://drive.google.com/file/d/10innSxqN7NgbktrlfPjWjE7gz-xpbJO_/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1DBxJXgtrW1_7McPSM_koyA?pwd=tbac)        | [google](https://drive.google.com/drive/folders/1VnJv-dNb6-gkKTq7uC_Q6YsRq_q3NI-t?usp=sharing) /[baidu](https://pan.baidu.com/s/1uv81CE34AhYbrz4247QcYA?pwd=k2ms) 
+| [**BEVDet4D-Tiny**](configs/bevdet4d/bevdet4d-sttiny.py) | 33.8     | 47.6    | 15.5   |11,557| [google](https://drive.google.com/file/d/1nyQfp7Gt-xbXDzcw5ritmFb8lvPM1H6n/view?usp=sharing) / [baidu](https://pan.baidu.com/s/1n9sVR6FnfmMccSJFTsVKfw?pwd=nzi1)        | [google](https://drive.google.com/drive/folders/1VnJv-dNb6-gkKTq7uC_Q6YsRq_q3NI-t?usp=sharing) /[baidu](https://pan.baidu.com/s/1uv81CE34AhYbrz4247QcYA?pwd=k2ms) 
+
 ## Get Started
-#### Installation
-##### 1.Please follow the guidelines in the original mmdet3d for preparing the repo and dataset.
-
-Please see [getting_started.md](docs/getting_started.md) for the basic usage of MMDetection3D. We provide guidance for quick run [with existing dataset](docs/1_exist_data_model.md) and [with customized dataset](docs/2_new_data_model.md) for beginners. There are also tutorials for [learning configuration systems](docs/tutorials/config.md), [adding new dataset](docs/tutorials/customize_dataset.md), [designing data pipeline](docs/tutorials/data_pipeline.md), [customizing models](docs/tutorials/customize_models.md), [customizing runtime settings](docs/tutorials/customize_runtime.md) and [Waymo dataset](docs/datasets/waymo_det.md).
-
-##### 2.Prepare dataset specific for BEVDet4D.
-Note: Make sure that data preparation in [nuscenes_det.md](docs/datasets/nuscenes_det.md) has been conducted.
-```shell
-python tools/data_converter/prepare_nuscenes_for_bevdet4d.py
-```
+#### Installation and Data Preparation
+Please see [getting_started.md](docs/getting_started.md)
 
 #### Estimate the inference speed of BEVDet
 ```shell
@@ -38,9 +32,14 @@ python tools/analysis_tools/benchmark.py configs/bevdet/bevdet-sttiny.py $checkp
 ```
 
 #### Visualize the predicted result with open3d.
-Note: make sure that you conduct the visualization locally instead of on the remote server.
+**Official implementation. (Visualization locally only)**
 ```shell
 python tools/test.py $config $checkpoint --show --show-dir $save-path
+```
+**Private implementation. (Visualization remotely/locally)**
+```shell
+python tools/test.py $config $checkpoint --format-only --eval-options jsonfile_prefix=$savepath
+python tools/analysis_tools/vis.py $savepath/pts_bbox/results_nusc.json
 ```
 ## Acknowledgement
 This project is not possible without multiple great open-sourced code bases. We list some notable examples below.
