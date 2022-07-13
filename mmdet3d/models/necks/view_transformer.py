@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from mmcv.runner import BaseModule
 from ..builder import NECKS
-
+from mmdet3d.ops import bev_pool
 
 def gen_dx_bx(xbound, ybound, zbound):
     dx = torch.Tensor([row[2] for row in [xbound, ybound, zbound]])
@@ -55,7 +55,8 @@ class QuickCumsum(torch.autograd.Function):
 class ViewTransformerLiftSplatShoot(BaseModule):
     def __init__(self, grid_config=None, data_config=None,
                  numC_input=512, numC_Trans=64, downsample=16,
-                 accelerate=False, **kwargs):
+                 accelerate=False, max_drop_point_rate=0.0, use_bev_pool=True,
+                 **kwargs):
         super(ViewTransformerLiftSplatShoot, self).__init__()
         if grid_config is None:
             grid_config = {
@@ -84,6 +85,8 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         self.depthnet = nn.Conv2d(self.numC_input, self.D + self.numC_Trans, kernel_size=1, padding=0)
         self.geom_feats = None
         self.accelerate = accelerate
+        self.max_drop_point_rate = max_drop_point_rate
+        self.use_bev_pool = use_bev_pool
 
     def get_depth_dist(self, x):
         return x.softmax(dim=1)
@@ -152,20 +155,30 @@ class ViewTransformerLiftSplatShoot(BaseModule):
         x = x[kept]
         geom_feats = geom_feats[kept]
 
-        # get tensors from the same voxel next to each other
-        ranks = geom_feats[:, 0] * (self.nx[1] * self.nx[2] * B) \
-                + geom_feats[:, 1] * (self.nx[2] * B) \
-                + geom_feats[:, 2] * B \
-                + geom_feats[:, 3]
-        sorts = ranks.argsort()
-        x, geom_feats, ranks = x[sorts], geom_feats[sorts], ranks[sorts]
+        if self.max_drop_point_rate > 0.0 and self.training:
+            drop_point_rate = torch.rand(1)*self.max_drop_point_rate
+            kept = torch.rand(x.shape[0])>drop_point_rate
+            x, geom_feats = x[kept], geom_feats[kept]
 
-        # cumsum trick
-        x, geom_feats = QuickCumsum.apply(x, geom_feats, ranks)
+        if self.use_bev_pool:
+            final = bev_pool(x, geom_feats, B, self.nx[2], self.nx[0],
+                                   self.nx[1])
+            final = final.transpose(dim0=-2, dim1=-1)
+        else:
+            # get tensors from the same voxel next to each other
+            ranks = geom_feats[:, 0] * (self.nx[1] * self.nx[2] * B) \
+                    + geom_feats[:, 1] * (self.nx[2] * B) \
+                    + geom_feats[:, 2] * B \
+                    + geom_feats[:, 3]
+            sorts = ranks.argsort()
+            x, geom_feats, ranks = x[sorts], geom_feats[sorts], ranks[sorts]
 
-        # griddify (B x C x Z x X x Y)
-        final = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
-        final[geom_feats[:, 3], :, geom_feats[:, 2], geom_feats[:, 1], geom_feats[:, 0]] = x
+            # cumsum trick
+            x, geom_feats = QuickCumsum.apply(x, geom_feats, ranks)
+
+            # griddify (B x C x Z x X x Y)
+            final = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
+            final[geom_feats[:, 3], :, geom_feats[:, 2], geom_feats[:, 1], geom_feats[:, 0]] = x
         # collapse Z
         final = torch.cat(final.unbind(dim=2), 1)
 
