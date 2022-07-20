@@ -226,7 +226,7 @@ test_pipeline = [
 # please keep its loading function consistent with test_pipeline (e.g. client)
 eval_pipeline = [
     dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config,
-         sequential=True, aligned=True),
+         sequential=True, aligned=True, trans_only=False),
     dict(
         type='DefaultFormatBundle3D',
         class_names=class_names,
