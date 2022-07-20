@@ -22,6 +22,7 @@ from .roiaware_pool3d import (RoIAwarePool3d, points_in_boxes_batch,
 from .sparse_block import (SparseBasicBlock, SparseBottleneck,
                            make_sparse_convmodule)
 from .voxel import DynamicScatter, Voxelization, dynamic_scatter, voxelization
+from .bev_pool.bev_pool import bev_pool
 
 __all__ = [
     'nms', 'soft_nms', 'RoIAlign', 'roi_align', 'get_compiler_version',
@@ -37,5 +38,5 @@ __all__ = [
     'points_in_boxes_batch', 'get_compiler_version', 'assign_score_withk',
     'get_compiling_cuda_version', 'Points_Sampler', 'build_sa_module',
     'PAConv', 'PAConvCUDA', 'PAConvSAModuleMSG', 'PAConvSAModule',
-    'PAConvCUDASAModule', 'PAConvCUDASAModuleMSG'
+    'PAConvCUDASAModule', 'PAConvCUDASAModuleMSG','bev_pool'
 ]
