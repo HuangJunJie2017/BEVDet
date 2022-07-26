@@ -126,7 +126,7 @@ class NuScenesDataset(Custom3DDataset):
                  eval_version='detection_cvpr_2019',
                  use_valid_flag=False,
                  img_info_prototype='mmcv',
-                 speed_mode='relative_dis',
+                 speed_mode='abs_dis',
                  max_interval=3,
                  min_interval=0,
                  prev_only=False,
