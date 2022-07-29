@@ -39,7 +39,10 @@ voxel_size = [0.1, 0.1, 0.2]
 numC_Trans=64
 
 model = dict(
-    type='BEVDet',
+    type='BEVDepth4D',
+    aligned=True,
+    detach=True,
+    before=True,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -58,16 +61,24 @@ model = dict(
         num_outs=1,
         start_level=0,
         out_ids=[0]),
-    img_view_transformer=dict(type='ViewTransformerLiftSplatShoot',
+    img_view_transformer=dict(type='ViewTransformerLSSBEVDepth',
+                              loss_depth_weight=100.0,
                               grid_config=grid_config,
                               data_config=data_config,
-                              numC_Trans=numC_Trans),
-    img_bev_encoder_backbone = dict(type='ResNetForBEVDet', numC_input=numC_Trans),
+                              numC_Trans=numC_Trans,
+                              extra_depth_net=dict(type='ResNetForBEVDet', numC_input=256,
+                                                   num_layer=[3,], num_channels=[256,], stride=[1,],)),
+    img_bev_encoder_backbone = dict(type='ResNetForBEVDet',  numC_input=128,
+                                    num_channels=[128, 256, 512]),
     img_bev_encoder_neck = dict(type='FPN_LSS',
                                 in_channels=numC_Trans*8+numC_Trans*2,
                                 out_channels=256),
+    pre_process = dict(type='ResNetForBEVDet',numC_input=numC_Trans,
+                      num_layer=[2,], num_channels=[64,], stride=[1,],
+                      backbone_output_ids=[0,]),
     pts_bbox_head=dict(
         type='CenterHead',
+        task_specific=True,
         in_channels=256,
         tasks=[
             dict(num_class=1, class_names=['car']),
@@ -105,7 +116,7 @@ model = dict(
             gaussian_overlap=0.1,
             max_objs=500,
             min_radius=2,
-            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2])),
+            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])),
     test_cfg=dict(
         pts=dict(
             pc_range=point_cloud_range[:2],
@@ -119,12 +130,12 @@ model = dict(
             # nms_type='circle',
             pre_max_size=1000,
             post_max_size=83,
-            # nms_thr=0.2,
+            # nms_thr=0.2
 
             # Scale-NMS
             nms_type=['rotate', 'rotate', 'rotate', 'circle', 'rotate', 'rotate'],
             nms_thr=[0.2, 0.2, 0.2, 0.2, 0.2, 0.5],
-            nms_rescale_factor=[1.0, [0.7, 0.7], [0.4, 0.55], 1.1, [1.0, 1.0], [4.5, 9.0]]
+            nms_rescale_factor=[1.0, [0.7, 0.7], [0.4, 0.55], 1.1, [1.0,1.0], [4.5, 9.0]]
         )))
 
 
@@ -135,10 +146,10 @@ file_client_args = dict(backend='disk')
 
 
 train_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles_BEVDet', is_train=True, data_config=data_config),
+    dict(type='LoadMultiViewImageFromFiles_BEVDet', is_train=True, data_config=data_config,
+         sequential=True, aligned=True, trans_only=False),
     dict(
         type='LoadPointsFromFile',
-        dummy=True,
         coord_type='LIDAR',
         load_dim=5,
         use_dim=5,
@@ -156,6 +167,7 @@ train_pipeline = [
         flip_ratio_bev_horizontal=0.5,
         flip_ratio_bev_vertical=0.5,
         update_img2lidar=True),
+    dict(type='PointToMultiViewDepth',),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
@@ -170,7 +182,8 @@ train_pipeline = [
 ]
 
 test_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config),
+    dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config,
+         sequential=True, aligned=True, trans_only=False),
     # load lidar points for --show in test.py only
     dict(
         type='LoadPointsFromFile',
@@ -178,6 +191,7 @@ test_pipeline = [
         load_dim=5,
         use_dim=5,
         file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth',),
     dict(
         type='MultiScaleFlipAug3D',
         img_scale=(1333, 800),
@@ -188,13 +202,29 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['points','img_inputs'])
+            dict(type='Collect3D', keys=['points', 'img_inputs'],
+                 meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
+                            'depth2img', 'cam2img', 'pad_shape',
+                            'scale_factor', 'flip', 'pcd_horizontal_flip',
+                            'pcd_vertical_flip', 'box_mode_3d', 'box_type_3d',
+                            'img_norm_cfg', 'pcd_trans', 'sample_idx',
+                            'pcd_scale_factor', 'pcd_rotation', 'pts_filename',
+                            'transformation_3d_flow', 'adjacent', 'adjacent_type',)
+                 )
         ])
 ]
 # construct a pipeline for data and gt loading in show function
 # please keep its loading function consistent with test_pipeline (e.g. client)
 eval_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config),
+    dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config,
+         sequential=True, aligned=True, trans_only=False),
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth',),
     dict(
         type='DefaultFormatBundle3D',
         class_names=class_names,
@@ -217,7 +247,7 @@ data = dict(
         dataset=dict(
             type=dataset_type,
             data_root=data_root,
-            ann_file=data_root + 'nuscenes_infos_train.pkl',
+            ann_file=data_root + 'nuscenes_infos_train_4d_interval3_max60.pkl',
             pipeline=train_pipeline,
             classes=class_names,
             test_mode=False,
@@ -226,11 +256,22 @@ data = dict(
             # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
             # and box_type_3d='Depth' in sunrgbd and scannet dataset.
             box_type_3d='LiDAR',
-            img_info_prototype='bevdet')),
+            img_info_prototype='bevdet_sequential',
+            speed_mode='abs_dis',
+            max_interval=9,
+            min_interval=2,
+            prev_only=True,
+            fix_direction=True)),
     val=dict(pipeline=test_pipeline, classes=class_names,
-        modality=input_modality, img_info_prototype='bevdet'),
+            ann_file=data_root + 'nuscenes_infos_val_4d_interval3.pkl',
+        modality=input_modality, img_info_prototype='bevdet_sequential',),
     test=dict(pipeline=test_pipeline, classes=class_names,
-        modality=input_modality, img_info_prototype='bevdet'))
+            ann_file=data_root + 'nuscenes_infos_val_4d_interval3_max60.pkl',
+              modality=input_modality,
+              img_info_prototype='bevdet_sequential',
+            speed_mode='abs_dis',
+              max_interval=10,
+              fix_direction=True,))
 
 # Optimizer
 optimizer = dict(type='AdamW', lr=2e-4, weight_decay=0.01)

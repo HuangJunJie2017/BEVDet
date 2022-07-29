@@ -45,8 +45,7 @@ model = dict(
     detach=True,
     before=True,
     img_backbone=dict(
-        pretrained=
-        '/mnt/cfs/algorithm/junjie.huang/models/resnet50-0676ba61.pth',
+        pretrained='torchvision://resnet50',
         type='ResNet',
         depth=50,
         num_stages=4,
