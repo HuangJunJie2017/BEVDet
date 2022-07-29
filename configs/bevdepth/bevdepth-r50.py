@@ -39,7 +39,7 @@ voxel_size = [0.1, 0.1, 0.2]
 numC_Trans=64
 
 model = dict(
-    type='BEVDet',
+    type='BEVDepth',
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -58,16 +58,23 @@ model = dict(
         num_outs=1,
         start_level=0,
         out_ids=[0]),
-    img_view_transformer=dict(type='ViewTransformerLiftSplatShoot',
+    img_view_transformer=dict(type='ViewTransformerLSSBEVDepth',
+                              loss_depth_weight=100.0,
                               grid_config=grid_config,
                               data_config=data_config,
-                              numC_Trans=numC_Trans),
+                              numC_Trans=numC_Trans,
+                              extra_depth_net=dict(type='ResNetForBEVDet',
+                                                   numC_input=256,
+                                                   num_layer=[3,],
+                                                   num_channels=[256,],
+                                                   stride=[1,])),
     img_bev_encoder_backbone = dict(type='ResNetForBEVDet', numC_input=numC_Trans),
     img_bev_encoder_neck = dict(type='FPN_LSS',
                                 in_channels=numC_Trans*8+numC_Trans*2,
                                 out_channels=256),
     pts_bbox_head=dict(
         type='CenterHead',
+        task_specific=True,
         in_channels=256,
         tasks=[
             dict(num_class=1, class_names=['car']),
@@ -138,7 +145,6 @@ train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles_BEVDet', is_train=True, data_config=data_config),
     dict(
         type='LoadPointsFromFile',
-        dummy=True,
         coord_type='LIDAR',
         load_dim=5,
         use_dim=5,
@@ -156,6 +162,7 @@ train_pipeline = [
         flip_ratio_bev_horizontal=0.5,
         flip_ratio_bev_vertical=0.5,
         update_img2lidar=True),
+    dict(type='PointToMultiViewDepth',),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
@@ -178,6 +185,7 @@ test_pipeline = [
         load_dim=5,
         use_dim=5,
         file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth', ),
     dict(
         type='MultiScaleFlipAug3D',
         img_scale=(1333, 800),
@@ -195,6 +203,13 @@ test_pipeline = [
 # please keep its loading function consistent with test_pipeline (e.g. client)
 eval_pipeline = [
     dict(type='LoadMultiViewImageFromFiles_BEVDet', data_config=data_config),
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth', ),
     dict(
         type='DefaultFormatBundle3D',
         class_names=class_names,
