@@ -194,6 +194,8 @@ __device__ inline float box_overlap(const float *box_a, const float *box_b) {
     }
   }
 
+  if (!cnt) return 0.0;
+  
   // check corners
   for (int k = 0; k < 4; k++) {
     if (check_in_box2d(box_a, box_b_corners[k])) {
