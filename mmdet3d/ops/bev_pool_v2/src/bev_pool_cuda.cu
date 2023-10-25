@@ -120,7 +120,35 @@ __global__ void bev_pool_grad_kernel(int c, int n_intervals,
   }
 }
 
+__global__ void bev_pool_grad_kernel_opt(
+    int c, int n_intervals, const float *__restrict__ out_grad,
+    const float *__restrict__ depth, const float *__restrict__ feat,
+    const int *__restrict__ ranks_depth, const int *__restrict__ ranks_feat,
+    const int *__restrict__ ranks_bev, const int *__restrict__ interval_starts,
+    const int *__restrict__ interval_lengths, float *__restrict__ depth_grad,
+    float *__restrict__ feat_grad) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int index = idx / c;
+  int cur_c = idx % c;
+  if (index >= n_intervals)
+    return;
 
+  int interval_start = interval_starts[index];
+  int interval_length = interval_lengths[index];
+
+  for (int i = 0; i < interval_length; ++i) {
+    const float *cur_out_grad_start =
+        out_grad + ranks_bev[interval_start + i] * c;
+    const float *cur_feat_start = feat + ranks_feat[interval_start + i] * c;
+    float *cur_depth_grad = depth_grad + ranks_depth[interval_start + i];
+    atomicAdd(cur_depth_grad,
+              cur_out_grad_start[cur_c] * cur_feat_start[cur_c]);
+    const int cur_rank = ranks_bev[interval_start + i];
+    float *cur_feat_grad = feat_grad + ranks_feat[interval_start] * c + cur_c;
+    *cur_feat_grad += out_grad[cur_rank * c + cur_c] *
+                      depth[ranks_depth[interval_start + i]];
+  }
+}
 
 void bev_pool_v2(int c, int n_intervals, const float* depth, const float* feat, const int* ranks_depth,
   const int* ranks_feat, const int* ranks_bev, const int* interval_starts, const int* interval_lengths, float* out) {
@@ -137,4 +165,15 @@ void bev_pool_v2_grad(int c, int n_intervals, const float* out_grad,
      c, n_intervals, out_grad, depth, feat, ranks_depth, ranks_feat,
      ranks_bev, interval_starts, interval_lengths, depth_grad, feat_grad
   );
+}
+
+void bev_pool_v2_grad_opt(int c, int n_intervals, const float *out_grad,
+                          const float *depth, const float *feat,
+                          const int *ranks_depth, const int *ranks_feat,
+                          const int *ranks_bev, const int *interval_starts,
+                          const int *interval_lengths, float *depth_grad,
+                          float *feat_grad) {
+  bev_pool_grad_kernel_opt<<<(int)ceil(((double)n_intervals * c / 256)), 256>>>(
+      c, n_intervals, out_grad, depth, feat, ranks_depth, ranks_feat, ranks_bev,
+      interval_starts, interval_lengths, depth_grad, feat_grad);
 }

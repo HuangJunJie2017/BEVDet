@@ -67,7 +67,7 @@ class QuickCumsumCuda(torch.autograd.Function):
         depth_grad = depth.new_zeros(depth.shape)
         feat_grad = feat.new_zeros(feat.shape)
         out_grad = out_grad.contiguous()
-        bev_pool_v2_ext.bev_pool_v2_backward(
+        bev_pool_v2_ext.bev_pool_v2_backward_opt(
             out_grad,
             depth_grad,
             feat_grad,
