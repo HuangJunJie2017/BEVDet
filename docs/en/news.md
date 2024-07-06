@@ -1,5 +1,5 @@
 ## News
-- **2023.05.07** Improve the occpancy baseline by enlarging the input size and using long-term temporal fusion.
+- **2023.05.07** Improve the occupancy baseline by enlarging the input size and using long-term temporal fusion.
 - **2023.04.28** Support task of [occupancy prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) .
 - **2023.04.27** Equip BEVDet with stereo depth estimation.
 - **2023.04.10** Use single head for multi-class prediction.
